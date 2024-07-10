@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+
+    <!-- Vertex Shader script in GLSL -->
+    <script id="vertex-shader" type="x-shader/x-vertex">
+       attribute vec3 position;
+       attribute vec3 normal;
+       attribute vec3 color;
+       attribute vec2 texcoords;
+
+       varying vec3 vColor;
+       varying vec3 vNormal;
+       varying vec3 vEye;
+       varying vec3 vLight;
+       varying vec3 vLightAxis;
+       varying vec3 vLightWorld;
+       varying vec2 vTexCoords;
+
+       uniform mat4 viewMatrix;
+       uniform mat4 modelMatrix;
+       uniform mat4 projectionMatrix;
+
+       struct LightVertexInfo {
+         vec3 position;
+         vec3 direction;
+         int type;
+       };
+
+       uniform LightVertexInfo LightVertex[4];
+
+      void main(void)
+       {
+         vec4 p = vec4(position, 1.0);
+         mat4 vm = viewMatrix * modelMatrix;
+         mat4 pvm = projectionMatrix * vm;
+
+         // Light Type : DIRECTIONAL
+         if (LightVertex[0].type == 0)
+         {
+           vLight = -normalize((viewMatrix * vec4(LightVertex[0].direction, 0)).xyz);
+         }
+         // Light Type : POINT && SPOT
+         else if (LightVertex[0].type == 1 || LightVertex[0].type == 2)
+         {
+           vec4 mp = modelMatrix * p;
+           vec4 lt = vec4(LightVertex[0].position, 1.0) - mp;
+           vLight = normalize(viewMatrix * lt).xyz;
+           vLightAxis = normalize(viewMatrix * vec4(LightVertex[0].direction, 0.0)).xyz;
+           vLightWorld = lt.xyz;
+         }
+
+         // Surface normal (We're assuming no scaling)
+         vNormal = normalize((vm * vec4(normal, 0.0)).xyz);
+
+         // Eye vector
+         vEye = -normalize(vm * p).xyz;
+
+         // Texture coordinates
+         vTexCoords = texcoords;
+
+         // Vertex colour
+         vColor = color;
+
+         // Projected vertex position
+         gl_Position = pvm * p;
+       }
+    </script>
+
+    <!-- Fragment Shader script in GLSL -->
+    <script id="fragment-shader" type="x-shader/x-vertex">
+      	precision mediump float;
+
+        // Passed from vertex shader
+        varying vec3 vColor;
+        varying vec3 vNormal;
+        varying vec3 vEye;
+        varying vec3 vLight;
+        varying vec3 vLightAxis;
+        varying vec3 vLightWorld;
+        varying vec2 vTexCoords;
+
+        // Material information
+        uniform float uShininess;
+        uniform vec3 uAmbient;
+        uniform vec3 uDiffuse;
+        uniform vec3 uSpecular;
+        uniform sampler2D uTexture_0;
+
+        // Light information structure
+        struct LightFragmentInfo {
+          int type;
+          int attenuation;
+
+          float alpha, beta;
+
+          vec3 ambient;
+          vec3 diffuse;
+          vec3 specular;
+        };
+
+        uniform LightFragmentInfo LightFragment[4];
+
+        float invPi = 0.31830988618;
+        float inv2Pi = 0.15915494309;
+
+      void main(void)
+      {
+          vec3 vnLight = normalize(vLight);
+          float vLightDistance = length(vLightWorld);
+
+          // Compute attenuation
+          float attenuation = 1.0;
+
+          if (LightFragment[0].type == 1 || LightFragment[0].type == 2) {
+            if (LightFragment[0].attenuation == 1) {
+              attenuation = 1.0 / vLightDistance;
+            } else if (LightFragment[0].attenuation == 2) {
+              attenuation = 1.0 / (vLightDistance * vLightDistance);
+            }
+          }
+
+          if (LightFragment[0].type == 2)
+          {
+            float coneAngle = dot(vnLight, -normalize(vLightAxis));
+            coneAngle = max(LightFragment[0].beta, min(LightFragment[0].alpha, coneAngle));
+            coneAngle = (coneAngle - LightFragment[0].beta) / (LightFragment[0].alpha - LightFragment[0].beta);
+            attenuation *= coneAngle;
+          }
+
+          // Compute reflection vector
+          vec3 vReflect = reflect(vnLight, vNormal);
+
+          // Reflectivity of components
+          vec3 ambient = LightFragment[0].ambient * uAmbient;
+          vec3 diffuse = LightFragment[0].diffuse * uDiffuse;
+          vec3 specular = LightFragment[0].specular * uSpecular;
+          vec3 rho = texture2D(uTexture_0, vTexCoords.xy).xyz;
+
+          // Compute phong specular and lambert diffuse
+          float s = pow(max(dot(vReflect, -vEye), 0.0), uShininess) * (uShininess + 2.0) * inv2Pi;
+          float d = max(dot(vNormal, vnLight), 0.0) * invPi;
+
+          // KB - Color blending has been changed from modulative to additive
+          //    - Result is saturated to prevent values outside colour valid range
+          //gl_FragColor = vec4(((ambient + d * diffuse + s * specular) * rho * vColor) * attenuation, 1.0);
+          gl_FragColor = vec4(
+            clamp(vColor + ((ambient + diffuse * d + specular * s) * rho * attenuation), vec3(0,0,0), vec3(1,1,1)),
+            1.0
+          );
+        }
+    </script>
+
+    <!-- Container for converted images -->
+    <div id="imageCollection" style="height: 0"></div>
+
+    <script type="text/javascript" src="matrix.js"></script>
+    <script type="text/javascript" src="light.js"></script>
+    <script type="text/javascript" src="material.js"></script>
+    <script type="text/javascript" src="model.js"></script>
+    <script type="text/javascript" src="scene.js"></script>
+    <script type="text/javascript" src="objectsModel.js"></script>
+    <script type="text/javascript" src="objectsNumber.js"></script>
+    <script type="text/javascript" src="objectsText.js"></script>
+    <script type="text/javascript" src="handler.js"></script>
+    <script type="text/javascript" src="game.js"></script>
+    <script type="text/javascript" src="script.js"></script>
+  </head>
+  <body style="margin: 0px" onload="main()">
+    <canvas
+      id="canvas-cg-lab"
+      style="position: absolute; background-color: black"
+    >
+    </canvas>
+  </body>
+</html>
